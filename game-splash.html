@@ -1,0 +1,129 @@
+<!-- index.html — Telegram Mini App
+     Игра: бег по платформам + баланс по наклону телефона + сбор монет
+     Управление: наклон телефона (гироскоп)
+-->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Balance Runner</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { margin:0; overflow:hidden; background:#0e0f14; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+const tg = window.Telegram?.WebApp;
+try { tg.ready(); tg.expand(); } catch {}
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+function resize(){
+  cv.width = innerWidth;
+  cv.height = innerHeight;
+}
+resize();
+addEventListener("resize", resize);
+
+let W = () => cv.width;
+let H = () => cv.height;
+
+let tilt = 0;
+window.addEventListener("deviceorientation", e=>{
+  tilt = e.gamma || 0; // -45 .. 45
+});
+
+const player = { x: W()/2, y: H()*0.7, r: 18, vx:0 };
+let platforms = [];
+let coins = [];
+let score = 0;
+let gameOver = false;
+
+function spawnPlatform(y){
+  let w = 120 + Math.random()*120;
+  let x = Math.random()*(W()-w);
+  platforms.push({x,y,w,h:18});
+  coins.push({x:x+w/2,y:y-25,collected:false});
+}
+
+function reset(){
+  score=0; gameOver=false;
+  player.x=W()/2; player.vx=0;
+  platforms=[]; coins=[];
+  let y=H()*0.8;
+  for(let i=0;i<8;i++){ spawnPlatform(y); y-=120; }
+}
+reset();
+
+function loop(){
+  requestAnimationFrame(loop);
+  ctx.clearRect(0,0,W(),H());
+
+  if(!gameOver){
+    player.vx = tilt * 0.4;
+    player.x += player.vx;
+    if(player.x<player.r||player.x>W()-player.r) gameOver=true;
+
+    platforms.forEach(p=>p.y+=2);
+    coins.forEach(c=>c.y+=2);
+
+    if(platforms[0].y>H()){
+      platforms.shift(); coins.shift();
+      spawnPlatform(-40);
+    }
+
+    coins.forEach(c=>{
+      if(!c.collected){
+        let dx=c.x-player.x, dy=c.y-player.y;
+        if(Math.hypot(dx,dy)<player.r+10){
+          c.collected=true; score++;
+        }
+      }
+    });
+  }
+
+  // draw platforms
+  ctx.fillStyle="#3E7BFA";
+  platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.w,p.h));
+
+  // draw coins
+  coins.forEach(c=>{
+    if(!c.collected){
+      ctx.fillStyle="#FFD166";
+      ctx.beginPath();
+      ctx.arc(c.x,c.y,8,0,Math.PI*2);
+      ctx.fill();
+    }
+  });
+
+  // player
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="white";
+  ctx.font="20px Arial";
+  ctx.fillText("Coins: "+score,10,30);
+
+  if(gameOver){
+    ctx.fillStyle="rgba(0,0,0,.6)";
+    ctx.fillRect(W()/2-130,H()/2-60,260,120);
+    ctx.fillStyle="white";
+    ctx.font="24px Arial";
+    ctx.fillText("GAME OVER",W()/2-90,H()/2-10);
+    ctx.font="16px Arial";
+    ctx.fillText("Tap to restart",W()/2-70,H()/2+25);
+  }
+}
+loop();
+
+addEventListener("click",()=>{ if(gameOver) reset(); });
+</script>
+</body>
+</html>
