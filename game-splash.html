@@ -20,133 +20,185 @@ try { tg.ready(); tg.expand(); } catch {}
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 
-function resize(){
-  cv.width = innerWidth;
-  cv.height = innerHeight;
-}
-resize();
-addEventListener("resize", resize);
+function resize(){ cv.width=innerWidth; cv.height=innerHeight; }
+resize(); addEventListener("resize", resize);
 
-let W = () => cv.width;
-let H = () => cv.height;
+let W=()=>cv.width, H=()=>cv.height;
 
-// ===== Управление наклоном =====
+// ===== Управление =====
 let tilt = 0;
 window.addEventListener("deviceorientation", e=>{
-  tilt = (e.gamma || 0) / 30; // -1 .. 1
+  tilt = (e.gamma || 0) / 25; // -1..1
 });
 
 // ===== Игрок =====
 const player = {
   x: 0,
-  y: 0,
-  r: 14
+  y: H()*0.75,
+  r: 10,
+  vy: 0,
+  jumping: false,
+  anim: 0
 };
 
 // ===== Платформа =====
 const platform = {
-  x: () => W()/2,
-  width: 120,
-  speed: 4
+  halfWidth: 36,   // <<< ОЧЕНЬ УЗКАЯ
+  speed: 6
 };
 
-// ===== Монеты =====
-let coins = [];
-let score = 0;
-let gameOver = false;
+// ===== Объекты =====
+let coins=[];
+let obstacles=[];
+let score=0;
+let gameOver=false;
 
 function spawnCoin(){
   coins.push({
-    offset: (Math.random()-0.5) * (platform.width/2 - 20),
-    z: -1000
+    offset:(Math.random()-0.5)*(platform.halfWidth-10),
+    z:-1200
+  });
+}
+
+function spawnObstacle(){
+  obstacles.push({
+    offset:(Math.random()-0.5)*(platform.halfWidth-8),
+    z:-1200,
+    h:20
   });
 }
 
 function reset(){
-  player.x = 0;
-  player.y = H()*0.75;
-  coins = [];
-  score = 0;
-  gameOver = false;
+  player.x=0; player.vy=0; player.jumping=false;
+  coins=[]; obstacles=[];
+  score=0; gameOver=false;
   for(let i=0;i<5;i++) spawnCoin();
+  for(let i=0;i<3;i++) spawnObstacle();
 }
 reset();
 
-// ===== Игровой цикл =====
+// ===== Прыжок =====
+addEventListener("click", ()=>{
+  if(gameOver){ reset(); return; }
+  if(!player.jumping){
+    player.vy=-14;
+    player.jumping=true;
+  }
+});
+
+// ===== Цикл =====
 function loop(){
   requestAnimationFrame(loop);
   ctx.clearRect(0,0,W(),H());
 
   if(!gameOver){
-    // движение вперёд
-    coins.forEach(c => c.z += platform.speed);
-
     // баланс
-    player.x += tilt * 6;
-
-    // падение
-    if(Math.abs(player.x) > platform.width/2 - player.r){
-      gameOver = true;
+    player.x += tilt*4;
+    if(Math.abs(player.x) > platform.halfWidth-player.r){
+      gameOver=true;
     }
+
+    // прыжок
+    if(player.jumping){
+      player.vy+=0.9;
+      player.y+=player.vy;
+      if(player.y>=H()*0.75){
+        player.y=H()*0.75;
+        player.vy=0;
+        player.jumping=false;
+      }
+    }
+
+    // движение мира
+    coins.forEach(c=>c.z+=platform.speed);
+    obstacles.forEach(o=>o.z+=platform.speed);
 
     // сбор монет
     coins.forEach(c=>{
-      if(!c.collected && c.z > -60 && c.z < 20){
-        if(Math.abs(player.x - c.offset) < 18){
-          c.collected = true;
+      if(!c.collected && c.z>-40 && c.z<40){
+        if(Math.abs(player.x-c.offset)<10 && !player.jumping){
+          c.collected=true;
           score++;
         }
       }
     });
 
-    // удаление и спавн
-    if(coins[0].z > 100){
-      coins.shift();
-      spawnCoin();
-    }
+    // столкновение с препятствием
+    obstacles.forEach(o=>{
+      if(o.z>-30 && o.z<30){
+        if(Math.abs(player.x-o.offset)<10 && !player.jumping){
+          gameOver=true;
+        }
+      }
+    });
+
+    // респавн
+    if(coins[0]?.z>100){ coins.shift(); spawnCoin(); }
+    if(obstacles[0]?.z>100){ obstacles.shift(); spawnObstacle(); }
   }
 
   draw();
 }
 
-// ===== Рендер =====
+// ===== РЕНДЕР =====
 function draw(){
   // фон
   ctx.fillStyle="#0e0f14";
   ctx.fillRect(0,0,W(),H());
 
-  // платформа (перспектива)
+  // платформа (очень узкая)
   ctx.fillStyle="#3E7BFA";
   ctx.beginPath();
-  ctx.moveTo(W()/2 - platform.width, H());
-  ctx.lineTo(W()/2 + platform.width, H());
-  ctx.lineTo(W()/2 + platform.width*0.2, H()*0.3);
-  ctx.lineTo(W()/2 - platform.width*0.2, H()*0.3);
+  ctx.moveTo(W()/2-platform.halfWidth,H());
+  ctx.lineTo(W()/2+platform.halfWidth,H());
+  ctx.lineTo(W()/2+platform.halfWidth*0.25,H()*0.3);
+  ctx.lineTo(W()/2-platform.halfWidth*0.25,H()*0.3);
   ctx.closePath();
   ctx.fill();
 
   // монеты
   coins.forEach(c=>{
     if(c.collected) return;
-    let scale = 1 - Math.abs(c.z)/1000;
-    let x = W()/2 + c.offset * scale;
-    let y = H()*0.7 - c.z*0.4;
+    let k=1-Math.abs(c.z)/1200;
+    let x=W()/2+c.offset*k;
+    let y=H()*0.7-c.z*0.35;
     ctx.fillStyle="#FFD166";
     ctx.beginPath();
-    ctx.arc(x, y, 6*scale, 0, Math.PI*2);
+    ctx.arc(x,y,5*k,0,Math.PI*2);
     ctx.fill();
   });
 
-  // игрок
-  ctx.fillStyle="#ffffff";
+  // препятствия
+  obstacles.forEach(o=>{
+    let k=1-Math.abs(o.z)/1200;
+    let x=W()/2+o.offset*k;
+    let y=H()*0.7-o.z*0.35;
+    ctx.fillStyle="#FF4D4D";
+    ctx.fillRect(x-6*k,y-12*k,12*k,24*k);
+  });
+
+  // человечек (вид сзади)
+  ctx.save();
+  ctx.translate(W()/2+player.x, player.y);
+  ctx.fillStyle="white";
+  ctx.beginPath(); ctx.arc(0,-18,8,0,Math.PI*2); ctx.fill(); // голова
+  ctx.fillRect(-4,-18,8,18); // тело
+
+  // ноги (бег)
+  player.anim+=0.2;
+  ctx.strokeStyle="white"; ctx.lineWidth=3;
   ctx.beginPath();
-  ctx.arc(W()/2 + player.x, player.y, player.r, 0, Math.PI*2);
-  ctx.fill();
+  ctx.moveTo(0,0);
+  ctx.lineTo(Math.sin(player.anim)*6,12);
+  ctx.moveTo(0,0);
+  ctx.lineTo(-Math.sin(player.anim)*6,12);
+  ctx.stroke();
+  ctx.restore();
 
   // UI
   ctx.fillStyle="white";
   ctx.font="20px Arial";
-  ctx.fillText("Coins: "+score, 12, 28);
+  ctx.fillText("Coins: "+score,12,28);
 
   if(gameOver){
     ctx.fillStyle="rgba(0,0,0,0.6)";
@@ -159,7 +211,6 @@ function draw(){
   }
 }
 
-addEventListener("click",()=>{ if(gameOver) reset(); });
 loop();
 </script>
 </body>
