@@ -1,7 +1,3 @@
-<!-- index.html — Telegram Mini App
-     Игра: бег по платформам + баланс по наклону телефона + сбор монет
-     Управление: наклон телефона (гироскоп)
--->
 <!doctype html>
 <html lang="ru">
 <head>
@@ -16,6 +12,7 @@
 </head>
 <body>
 <canvas id="cv"></canvas>
+
 <script>
 const tg = window.Telegram?.WebApp;
 try { tg.ready(); tg.expand(); } catch {}
@@ -33,97 +30,137 @@ addEventListener("resize", resize);
 let W = () => cv.width;
 let H = () => cv.height;
 
+// ===== Управление наклоном =====
 let tilt = 0;
 window.addEventListener("deviceorientation", e=>{
-  tilt = e.gamma || 0; // -45 .. 45
+  tilt = (e.gamma || 0) / 30; // -1 .. 1
 });
 
-const player = { x: W()/2, y: H()*0.7, r: 18, vx:0 };
-let platforms = [];
+// ===== Игрок =====
+const player = {
+  x: 0,
+  y: 0,
+  r: 14
+};
+
+// ===== Платформа =====
+const platform = {
+  x: () => W()/2,
+  width: 120,
+  speed: 4
+};
+
+// ===== Монеты =====
 let coins = [];
 let score = 0;
 let gameOver = false;
 
-function spawnPlatform(y){
-  let w = 120 + Math.random()*120;
-  let x = Math.random()*(W()-w);
-  platforms.push({x,y,w,h:18});
-  coins.push({x:x+w/2,y:y-25,collected:false});
+function spawnCoin(){
+  coins.push({
+    offset: (Math.random()-0.5) * (platform.width/2 - 20),
+    z: -1000
+  });
 }
 
 function reset(){
-  score=0; gameOver=false;
-  player.x=W()/2; player.vx=0;
-  platforms=[]; coins=[];
-  let y=H()*0.8;
-  for(let i=0;i<8;i++){ spawnPlatform(y); y-=120; }
+  player.x = 0;
+  player.y = H()*0.75;
+  coins = [];
+  score = 0;
+  gameOver = false;
+  for(let i=0;i<5;i++) spawnCoin();
 }
 reset();
 
+// ===== Игровой цикл =====
 function loop(){
   requestAnimationFrame(loop);
   ctx.clearRect(0,0,W(),H());
 
   if(!gameOver){
-    player.vx = tilt * 0.4;
-    player.x += player.vx;
-    if(player.x<player.r||player.x>W()-player.r) gameOver=true;
+    // движение вперёд
+    coins.forEach(c => c.z += platform.speed);
 
-    platforms.forEach(p=>p.y+=2);
-    coins.forEach(c=>c.y+=2);
+    // баланс
+    player.x += tilt * 6;
 
-    if(platforms[0].y>H()){
-      platforms.shift(); coins.shift();
-      spawnPlatform(-40);
+    // падение
+    if(Math.abs(player.x) > platform.width/2 - player.r){
+      gameOver = true;
     }
 
+    // сбор монет
     coins.forEach(c=>{
-      if(!c.collected){
-        let dx=c.x-player.x, dy=c.y-player.y;
-        if(Math.hypot(dx,dy)<player.r+10){
-          c.collected=true; score++;
+      if(!c.collected && c.z > -60 && c.z < 20){
+        if(Math.abs(player.x - c.offset) < 18){
+          c.collected = true;
+          score++;
         }
       }
     });
+
+    // удаление и спавн
+    if(coins[0].z > 100){
+      coins.shift();
+      spawnCoin();
+    }
   }
 
-  // draw platforms
+  draw();
+}
+
+// ===== Рендер =====
+function draw(){
+  // фон
+  ctx.fillStyle="#0e0f14";
+  ctx.fillRect(0,0,W(),H());
+
+  // платформа (перспектива)
   ctx.fillStyle="#3E7BFA";
-  platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.w,p.h));
-
-  // draw coins
-  coins.forEach(c=>{
-    if(!c.collected){
-      ctx.fillStyle="#FFD166";
-      ctx.beginPath();
-      ctx.arc(c.x,c.y,8,0,Math.PI*2);
-      ctx.fill();
-    }
-  });
-
-  // player
-  ctx.fillStyle="#fff";
   ctx.beginPath();
-  ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
+  ctx.moveTo(W()/2 - platform.width, H());
+  ctx.lineTo(W()/2 + platform.width, H());
+  ctx.lineTo(W()/2 + platform.width*0.2, H()*0.3);
+  ctx.lineTo(W()/2 - platform.width*0.2, H()*0.3);
+  ctx.closePath();
   ctx.fill();
 
+  // монеты
+  coins.forEach(c=>{
+    if(c.collected) return;
+    let scale = 1 - Math.abs(c.z)/1000;
+    let x = W()/2 + c.offset * scale;
+    let y = H()*0.7 - c.z*0.4;
+    ctx.fillStyle="#FFD166";
+    ctx.beginPath();
+    ctx.arc(x, y, 6*scale, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // игрок
+  ctx.fillStyle="#ffffff";
+  ctx.beginPath();
+  ctx.arc(W()/2 + player.x, player.y, player.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // UI
   ctx.fillStyle="white";
   ctx.font="20px Arial";
-  ctx.fillText("Coins: "+score,10,30);
+  ctx.fillText("Coins: "+score, 12, 28);
 
   if(gameOver){
-    ctx.fillStyle="rgba(0,0,0,.6)";
-    ctx.fillRect(W()/2-130,H()/2-60,260,120);
+    ctx.fillStyle="rgba(0,0,0,0.6)";
+    ctx.fillRect(W()/2-140,H()/2-60,280,120);
     ctx.fillStyle="white";
     ctx.font="24px Arial";
     ctx.fillText("GAME OVER",W()/2-90,H()/2-10);
     ctx.font="16px Arial";
-    ctx.fillText("Tap to restart",W()/2-70,H()/2+25);
+    ctx.fillText("Tap to restart",W()/2-65,H()/2+25);
   }
 }
-loop();
 
 addEventListener("click",()=>{ if(gameOver) reset(); });
+loop();
 </script>
 </body>
 </html>
